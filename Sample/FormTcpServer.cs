@@ -19,6 +19,8 @@ namespace Sample
     {
         private Task acceptLoopTask = null;
 
+        private SemaphoreSlim locker = new SemaphoreSlim(1, 1);
+
         /// <summary>
         /// クライアント管理辞書
         /// [key]名前 or IP:Port
@@ -159,11 +161,19 @@ namespace Sample
                     // Read Loop Start
                     mgr.ReadTask = ReadLoop(mgr, cToken);
 
-                    // 接続してきたクライアントに対し、既に接続している他のクライアントの情報を送信
-                    foreach (string clientName in dicTcpClient.Keys)
+                    try
                     {
-                        TcpMessageUtility sendMsgMgr = new TcpMessageUtility(TcpMessageUtility.HeaderName, clientName, acceptClientName, clientName);
-                        TcpServerUtil.SendTarget(mgr.GetClientIpAndPort(), sendMsgMgr.GetSendMessage());
+                        _ = locker.WaitAsync();
+                        // 接続してきたクライアントに対し、既に接続している他のクライアントの情報を送信
+                        foreach (string clientName in dicTcpClient.Keys)
+                        {
+                            TcpMessageUtility sendMsgMgr = new TcpMessageUtility(TcpMessageUtility.HeaderName, clientName, acceptClientName, clientName);
+                            TcpServerUtil.SendTarget(mgr.GetClientIpAndPort(), sendMsgMgr.GetSendMessage());
+                        }
+                    }
+                    finally
+                    {
+                        locker.Release();
                     }
                 }
             }
@@ -204,61 +214,81 @@ namespace Sample
                             switch (recvMsgMgr.Header)
                             {
                                 case TcpMessageUtility.HeaderConnect:
-                                    // 名前設定
-                                    // 辞書のキーの変更
-                                    dicTcpClient.Remove(tcpClientMgr.GetClientIpAndPort());
+                                    try
+                                    {
+                                        _ = locker.WaitAsync();
 
-                                    if (!dicTcpClient.ContainsKey(recvMsgMgr.Value))
-                                    {
-                                        // 受信した名前が未登録の場合
-                                        tcpClientMgr.Name = recvMsgMgr.Value;
-                                        dicTcpClient.Add(tcpClientMgr.Name, tcpClientMgr);
-                                    }
-                                    else
-                                    {
-                                        // 受信した名前が既に登録されている場合
-                                        int count = 0;
-                                        string newName;
-                                        do
+                                        // 名前設定
+                                        // 辞書のキーの変更
+                                        dicTcpClient.Remove(tcpClientMgr.GetClientIpAndPort());
+
+                                        if (!dicTcpClient.ContainsKey(recvMsgMgr.Value))
                                         {
-                                            // 番号を付加する
-                                            count++;
-                                            newName = recvMsgMgr.Value + count.ToString();
-                                        } while (dicTcpClient.ContainsKey(newName));
-                                        tcpClientMgr.Name = newName;
-                                        dicTcpClient.Add(newName, tcpClientMgr);
+                                            // 受信した名前が未登録の場合
+                                            tcpClientMgr.Name = recvMsgMgr.Value;
+                                            dicTcpClient.Add(tcpClientMgr.Name, tcpClientMgr);
+                                        }
+                                        else
+                                        {
+                                            // 受信した名前が既に登録されている場合
+                                            int count = 0;
+                                            string newName;
+                                            do
+                                            {
+                                                // 番号を付加する
+                                                count++;
+                                                newName = recvMsgMgr.Value + count.ToString();
+                                            } while (dicTcpClient.ContainsKey(newName));
+                                            tcpClientMgr.Name = newName;
+                                            dicTcpClient.Add(newName, tcpClientMgr);
+                                        }
+
+                                        // List＆Comboに追加
+                                        Invoke((Action)(() =>
+                                        {
+                                            listBoxUser.Items.Add(tcpClientMgr.Name);
+                                            cboxTarget.Items.Add(tcpClientMgr.Name);
+                                        }));
+
+                                        // 全体に接続情報を送信
+                                        // Connect,IP:Port,受信した名前,登録した名前
+                                        sendMsgMgr = new TcpMessageUtility(TcpMessageUtility.HeaderConnect, tcpClientMgr.GetClientIpAndPort(), recvMsgMgr.Value, tcpClientMgr.Name);
+                                        TcpServerUtil.SendAll(sendMsgMgr.GetSendMessage());
+                                    }
+                                    finally
+                                    {
+                                        locker.Release();
                                     }
 
-                                    // List＆Comboに追加
-                                    Invoke((Action)(() =>
-                                    {
-                                        listBoxUser.Items.Add(tcpClientMgr.Name);
-                                        cboxTarget.Items.Add(tcpClientMgr.Name);
-                                    }));
-
-                                    // 全体に接続情報を送信
-                                    // Connect,IP:Port,受信した名前,登録した名前
-                                    sendMsgMgr = new TcpMessageUtility(TcpMessageUtility.HeaderConnect, tcpClientMgr.GetClientIpAndPort(), recvMsgMgr.Value, tcpClientMgr.Name);
-                                    TcpServerUtil.SendAll(sendMsgMgr.GetSendMessage());
                                     break;
                                 case TcpMessageUtility.HeaderTargetMsg:
-                                    // 送信元を設定
-                                    sendMsgMgr = new TcpMessageUtility(TcpMessageUtility.HeaderTargetMsg, tcpClientMgr.Name, recvMsgMgr.SendToTarget, recvMsgMgr.Value);
-
-                                    Invoke((Action)(() =>
+                                    try
                                     {
-                                        listViewLog.Items.Add(sendMsgMgr.GetRecvTargetMessage());
-                                    }));
+                                        _ = locker.WaitAsync();
 
-                                    // 受信したメッセージを対象に送信する
-                                    // 名前→IP:Portへの変換
-                                    string toTarget = dicTcpClient[recvMsgMgr.SendToTarget].GetClientIpAndPort();
-                                    TcpServerUtil.SendTarget(toTarget, sendMsgMgr.GetSendMessage());
+                                        // 送信元を設定
+                                        sendMsgMgr = new TcpMessageUtility(TcpMessageUtility.HeaderTargetMsg, tcpClientMgr.Name, recvMsgMgr.SendToTarget, recvMsgMgr.Value);
 
-                                    // 受信したメッセージを送信元に送信する
-                                    // 名前→IP:Portへの変換
-                                    string fromTarget = tcpClientMgr.GetClientIpAndPort();
-                                    TcpServerUtil.SendTarget(fromTarget, sendMsgMgr.GetSendMessage());
+                                        Invoke((Action)(() =>
+                                        {
+                                            listViewLog.Items.Add(sendMsgMgr.GetRecvTargetMessage());
+                                        }));
+
+                                        // 受信したメッセージを対象に送信する
+                                        // 名前→IP:Portへの変換
+                                        string toTarget = dicTcpClient[recvMsgMgr.SendToTarget].GetClientIpAndPort();
+                                        TcpServerUtil.SendTarget(toTarget, sendMsgMgr.GetSendMessage());
+
+                                        // 受信したメッセージを送信元に送信する
+                                        // 名前→IP:Portへの変換
+                                        string fromTarget = tcpClientMgr.GetClientIpAndPort();
+                                        TcpServerUtil.SendTarget(fromTarget, sendMsgMgr.GetSendMessage());
+
+                                    }
+                                    finally
+                                    {
+                                        locker.Release();
+                                    }
                                     break;
                                 case TcpMessageUtility.HeaderAllMsg:
                                 default:
@@ -297,14 +327,22 @@ namespace Sample
 
         private void DeleteTcpClient(TcpServerManager.ClientInfo tcpClientMgr)
         {
-            string deleteTargetIpAndPort = tcpClientMgr.GetClientIpAndPort();
-            _ = Invoke((Action)(() =>
-              {
-                  listBoxUser.Items.Remove(tcpClientMgr.Name);
-                  cboxTarget.Items.Remove(tcpClientMgr.Name);
-              }));
-            _ = dicTcpClient.Remove(deleteTargetIpAndPort);
-            TcpServerUtil.Delete(deleteTargetIpAndPort);
+            try
+            {
+                _ = locker.WaitAsync();
+                string deleteTargetIpAndPort = tcpClientMgr.GetClientIpAndPort();
+                _ = Invoke((Action)(() =>
+                {
+                    listBoxUser.Items.Remove(tcpClientMgr.Name);
+                    cboxTarget.Items.Remove(tcpClientMgr.Name);
+                }));
+                _ = dicTcpClient.Remove(deleteTargetIpAndPort);
+                TcpServerUtil.Delete(deleteTargetIpAndPort);
+            }
+            finally
+            {
+                locker.Release();
+            }
         }
 
         /// <summary>

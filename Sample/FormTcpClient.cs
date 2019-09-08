@@ -136,6 +136,8 @@ namespace Sample
                 return;
             }
 
+            ClearNamesList();
+
             // 読み込みループ開始
             // Task停止用のトークン発行
             ReadCancelTokenSource = new CancellationTokenSource();
@@ -146,6 +148,13 @@ namespace Sample
             // ボタンの有効無効を設定
             SetControlEnabled(ActionMode.Connect);
             // ▲▲▲ 業務処理 ▲▲▲
+        }
+
+        private void ClearNamesList()
+        {
+            listBoxUser.Items.Clear();
+            cboxTarget.Items.Clear();
+            cboxTarget.Items.Add("全員");
         }
 
         private async Task ReadLoop(CancellationToken cToken)
