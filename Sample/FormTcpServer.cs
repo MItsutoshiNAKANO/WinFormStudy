@@ -280,9 +280,7 @@ namespace Sample
                     {
                         // 切断
                         Logger.WriteLine(nameof(ReadLoop), "切断されました。");
-                        string deleteTargetIpAndPort = tcpClientMgr.GetClientIpAndPort();
-                        _ = dicTcpClient.Remove(deleteTargetIpAndPort);
-                        TcpServerUtil.Delete(deleteTargetIpAndPort);
+                        DeleteTcpClient(tcpClientMgr);
                         return;
                     }
                 }
@@ -291,9 +289,22 @@ namespace Sample
             {
                 Debug.WriteLine(ex.ToString());
                 Logger.WriteException(nameof(ReadLoop), ex);
+                DeleteTcpClient(tcpClientMgr);
             }
 
             Logger.EndMethod(nameof(ReadLoop));
+        }
+
+        private void DeleteTcpClient(TcpServerManager.ClientInfo tcpClientMgr)
+        {
+            string deleteTargetIpAndPort = tcpClientMgr.GetClientIpAndPort();
+            _ = Invoke((Action)(() =>
+              {
+                  listBoxUser.Items.Remove(tcpClientMgr.Name);
+                  cboxTarget.Items.Remove(tcpClientMgr.Name);
+              }));
+            _ = dicTcpClient.Remove(deleteTargetIpAndPort);
+            TcpServerUtil.Delete(deleteTargetIpAndPort);
         }
 
         /// <summary>

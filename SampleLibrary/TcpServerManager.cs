@@ -156,7 +156,7 @@ namespace SampleLibrary
             return null;
         }
 
-        public void Delete(String ipAndPort)
+        public void Delete(string ipAndPort)
         {
             ClientInfo deleteTarget = dicClient[ipAndPort];
             deleteTarget.Client.Dispose();
